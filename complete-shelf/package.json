@@ -4,21 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:standalone": "node scripts/build-standalone.mjs",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "build:standalone": "node scripts/build-standalone.mjs"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "esbuild": "^0.25.12",
-    "typescript": "~5.6.3",
-    "vite": "^6.0.7"
+    "esbuild": "^0.25.12"
   }
 }
