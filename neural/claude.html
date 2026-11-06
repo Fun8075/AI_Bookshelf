@@ -856,6 +856,14 @@
       window.setTimeout(preloadGazeFrames, 1200);
     }
 
+    // 页面空闲后预载待机与情绪视频，首次点击动作不再等网络
+    window.setTimeout(() => {
+      if (!idleVideo.getAttribute("src")) {
+        idleVideo.src = `${ASSET_BASE}/idle.webm`;
+      }
+      window.setTimeout(preloadEmotionVideos, 800);
+    }, 800);
+
     // 点击随机播放的情绪动作，视频在首次触发时才加载
     const EMOTION_ACTIONS = [
       { id: "wave", label: "挥手", video: reactVideo, src: `${ASSET_BASE}/wave.webm` },
@@ -911,6 +919,25 @@
     function ensureEmotionSource(action) {
       if (!action.src || action.video.getAttribute("src")) return;
       action.video.src = action.src;
+    }
+
+    let emotionsPreloaded = false;
+    // 依次预载 8 段情绪视频，点击动作时不再等待网络
+    function preloadEmotionVideos() {
+      if (emotionsPreloaded) return;
+      emotionsPreloaded = true;
+      let index = 0;
+      const next = () => {
+        if (index >= EMOTION_ACTIONS.length) return;
+        const action = EMOTION_ACTIONS[index];
+        index += 1;
+        ensureEmotionSource(action);
+        action.video.preload = "auto";
+        if (action.video.readyState === 0) action.video.load();
+        // 错开请求，避免 8 个大文件同时抢占带宽
+        window.setTimeout(next, 300);
+      };
+      next();
     }
 
     function setLean(x, y, rot) {
@@ -1276,8 +1303,8 @@
 
       currentEmotion = action;
 
-      if (action.src && !action.video.getAttribute("src")) {
-        // 首次触发：先加载，就绪后再切走待机画面，避免出现空白帧
+      if (action.src && action.video.readyState < 2) {
+        // 视频尚未就绪：等首帧解码完成再切走待机画面，避免卡顿或空白帧
         const start = () => playEmotion(action);
         action.video.addEventListener("loadeddata", start, { once: true });
         action.video.addEventListener("error", () => finishReaction(), { once: true });
@@ -1295,6 +1322,8 @@
       action.video.classList.add("is-active");
       idleVideo.classList.add("is-dimmed");
       snapHideLayer(idleVideo);
+      // 播放动作时暂停待机视频，避免两段视频同时解码造成卡顿
+      idleVideo.pause();
       try {
         action.video.currentTime = 0;
       } catch (error) {
@@ -1438,6 +1467,7 @@
     function enterHumanMode() {
       resetCharacterLayers();
       preloadGazeFrames();
+      preloadEmotionVideos();
       updateFollowMetrics();
 
       humanMode = true;
@@ -1470,7 +1500,7 @@
         });
       };
 
-      if (coldStart && idleVideo.readyState < 2) {
+      if (idleVideo.readyState < 2) {
         // 首次切换时等首帧解码完成，轮廓采样才不会退化成默认形状
         let started = false;
         const begin = () => {
