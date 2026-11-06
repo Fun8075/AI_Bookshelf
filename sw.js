@@ -1,6 +1,7 @@
-/* 智汇卷册 · 角色素材离线缓存 */
+/* 智汇卷册 · 角色素材与运行库离线缓存 */
 const ASSET_CACHE = "ai-bookshelf-assets-v3";
 const PAGE_CACHE = "ai-bookshelf-pages-v1";
+const LIB_CACHE = "ai-bookshelf-lib-v1";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -11,7 +12,7 @@ self.addEventListener("activate", (event) => {
     const keys = await caches.keys();
     await Promise.all(
       keys
-        .filter((key) => key !== ASSET_CACHE && key !== PAGE_CACHE)
+        .filter((key) => key !== ASSET_CACHE && key !== PAGE_CACHE && key !== LIB_CACHE)
         .map((key) => caches.delete(key))
     );
     await self.clients.claim();
@@ -33,6 +34,19 @@ self.addEventListener("fetch", (event) => {
       const cached = await cache.match(request);
       if (cached) return cached;
       // 缓存未命中时绕过浏览器 HTTP 缓存，避免继续命中旧的 immutable 副本
+      const response = await fetch(request, { cache: "reload" });
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })());
+    return;
+  }
+
+  // Three.js 运行库：缓存优先，加载一次后神经页离线可用
+  if (url.pathname.startsWith("/vendor/")) {
+    event.respondWith((async () => {
+      const cache = await caches.open(LIB_CACHE);
+      const cached = await cache.match(request);
+      if (cached) return cached;
       const response = await fetch(request, { cache: "reload" });
       if (response.ok) cache.put(request, response.clone());
       return response;

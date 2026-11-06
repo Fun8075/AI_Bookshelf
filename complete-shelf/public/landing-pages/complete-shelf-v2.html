@@ -4711,6 +4711,19 @@
     let prefetchWorkers = 0;
     let prefetchTimer = 0;
 
+    // 神经页依赖的 Three.js 运行库：在书架浏览时就后台下载，打开神经页后不再现场等待
+    const LIBRARY_ASSET_URLS = [
+      "vendor/three/three.module.js",
+      "vendor/three/addons/postprocessing/EffectComposer.js",
+      "vendor/three/addons/postprocessing/RenderPass.js",
+      "vendor/three/addons/postprocessing/UnrealBloomPass.js",
+      "vendor/three/addons/postprocessing/Pass.js",
+      "vendor/three/addons/postprocessing/ShaderPass.js",
+      "vendor/three/addons/postprocessing/MaskPass.js",
+      "vendor/three/addons/shaders/CopyShader.js",
+      "vendor/three/addons/shaders/LuminosityHighPassShader.js",
+    ];
+
     function startPrefetchWorkers() {
       while (prefetchWorkers < PREFETCH_CONCURRENCY && prefetchQueue.length) {
         prefetchWorkers += 1;
@@ -4782,6 +4795,7 @@
     }
 
     // 页面一开始就分批预取全部角色资源，不等书架纹理生成完成
+    enqueueAssetPrefetch(LIBRARY_ASSET_URLS);
     window.setTimeout(prefetchAllCharacterAssets, 800);
 
     function neuralFrameSrc(book) {
