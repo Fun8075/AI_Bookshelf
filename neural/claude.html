@@ -968,6 +968,39 @@
       task.video.load();
     }
 
+    function waitForVideoReady(video, timeout = 5000) {
+      if (video.readyState >= 2) return Promise.resolve();
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          video.removeEventListener("loadeddata", finish);
+          video.removeEventListener("canplay", finish);
+          resolve();
+        };
+        video.addEventListener("loadeddata", finish);
+        video.addEventListener("canplay", finish);
+        window.setTimeout(finish, timeout);
+      });
+    }
+
+    // 同一个动作只加载一次；点击未就绪的动作时会立即优先加载它
+    function startEmotionLoad(action) {
+      if (action.loadPromise) return action.loadPromise;
+      action.loadPromise = (async () => {
+        try {
+          await installVideoBlob({ url: action.src, video: action.video });
+        } catch (error) {
+          if (!action.video.getAttribute("src")) {
+            action.video.src = action.src;
+          }
+        }
+        await waitForVideoReady(action.video);
+      })();
+      return action.loadPromise;
+    }
+
     // 先加载待机视频，完成后立刻放行「数字人」入口；情绪动作在后台继续预载
     async function preloadCharacterVideos() {
       if (characterAssetsStarted) return;
@@ -991,19 +1024,16 @@
       }
       unlockHumanMode();
 
-      const tasks = EMOTION_ACTIONS.map((action) => ({
-        url: action.src,
-        video: action.video
-      }));
+      const tasks = EMOTION_ACTIONS.slice();
       let cursor = 0;
       const worker = async () => {
         while (cursor < tasks.length) {
-          const task = tasks[cursor];
+          const action = tasks[cursor];
           cursor += 1;
           try {
-            await installVideoBlob(task);
+            await startEmotionLoad(action);
           } catch (error) {
-            if (!task.video.getAttribute("src")) task.video.src = task.url;
+            // 单个动作失败不影响其它动作
           }
         }
       };
@@ -1360,7 +1390,12 @@
       const candidates = EMOTION_ACTIONS.filter(
         (action) => action.id !== lastEmotionId
       );
-      const action = candidates[Math.floor(Math.random() * candidates.length)];
+      // 优先挑已经就绪的动作，避免点一下还要等待下载
+      const readyCandidates = candidates.filter(
+        (action) => action.video.readyState >= 2
+      );
+      const pool = readyCandidates.length ? readyCandidates : candidates;
+      const action = pool[Math.floor(Math.random() * pool.length)];
       lastEmotionId = action.id;
 
       window.clearTimeout(reactTimer);
@@ -1376,15 +1411,18 @@
 
       currentEmotion = action;
 
-      if (action.src && action.video.readyState < 2) {
-        // 视频尚未就绪：等首帧解码完成再切走待机画面，避免卡顿或空白帧
-        const start = () => playEmotion(action);
-        action.video.addEventListener("loadeddata", start, { once: true });
-        action.video.addEventListener("error", () => finishReaction(), { once: true });
-        ensureEmotionSource(action);
-        reactTimer = window.setTimeout(start, 3000);
-      } else {
+      if (action.video.readyState >= 2) {
         playEmotion(action);
+      } else {
+        // 未就绪时立即优先加载这个动作，就绪后自动播放，不再空等超时
+        startEmotionLoad(action).then(() => {
+          if (currentEmotion === action && action.video.readyState >= 2) {
+            playEmotion(action);
+          }
+        });
+        reactTimer = window.setTimeout(() => {
+          if (currentEmotion === action) finishReaction();
+        }, 6000);
       }
     }
 
