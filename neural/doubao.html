@@ -1353,16 +1353,22 @@
       }
       reactTimer = window.setTimeout(() => {
         if (!reacting) return;
-        reacting = false;
         const action = currentEmotion;
         currentEmotion = null;
         if (action) {
           action.video.classList.remove("is-active");
           snapHideLayer(action.video);
         }
-        idleVideo.classList.remove("is-dimmed");
-        snapShowLayer(idleVideo);
-        idleVideo.play().catch(() => {});
+        reacting = false;
+        // 先让动作层完全撤场，再恢复待机/注视，避免换层瞬间出现两个人物
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            if (reacting || lookActive) return;
+            idleVideo.classList.remove("is-dimmed");
+            snapShowLayer(idleVideo);
+            idleVideo.play().catch(() => {});
+          });
+        });
       }, 500);
     }
 

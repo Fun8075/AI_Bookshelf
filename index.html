@@ -5759,5 +5759,11 @@ void main() {
       );
     })();
   </script>
+    <script>
+    /* 角色素材离线缓存：首次访问后写入浏览器本地，之后直接本地读取 */
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    }
+    </script>
 </body>
 </html>
