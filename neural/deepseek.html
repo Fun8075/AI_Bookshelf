@@ -661,17 +661,34 @@
     })();
   </script>
 
-  <link rel="modulepreload" href="../vendor/three/three.module.js">
-  <link rel="modulepreload" href="../vendor/three/addons/postprocessing/EffectComposer.js">
-  <link rel="modulepreload" href="../vendor/three/addons/postprocessing/RenderPass.js">
-  <link rel="modulepreload" href="../vendor/three/addons/postprocessing/UnrealBloomPass.js">
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "../vendor/three/three.module.js",
-        "three/addons/": "../vendor/three/addons/"
+  <script>
+    (() => {
+      // file:// 下浏览器禁止加载本地 ES 模块，此时回退到 CDN；正常 http(s) 站点用本地 vendor
+      const isFile = location.protocol === "file:";
+      const local = "../vendor/three/";
+      const cdn = "https://cdn.jsdelivr.net/npm/three@0.165.0/";
+      const imports = {
+        three: isFile ? `${cdn}build/three.module.js` : `${local}three.module.js`,
+        "three/addons/": isFile ? `${cdn}examples/jsm/` : `${local}addons/`,
+      };
+      if (!isFile) {
+        for (const href of [
+          `${local}three.module.js`,
+          `${local}addons/postprocessing/EffectComposer.js`,
+          `${local}addons/postprocessing/RenderPass.js`,
+          `${local}addons/postprocessing/UnrealBloomPass.js`,
+        ]) {
+          const link = document.createElement("link");
+          link.rel = "modulepreload";
+          link.href = href;
+          document.head.appendChild(link);
+        }
       }
-    }
+      const map = document.createElement("script");
+      map.type = "importmap";
+      map.textContent = JSON.stringify({ imports });
+      document.currentScript.after(map);
+    })();
   </script>
 
   <script type="module">
@@ -718,7 +735,8 @@
     const ASSET_BASE = `../assets/${CHARACTER_ID}`;
     // 资源版本号：视频/注视帧更新后递增，使 URL 变化，强制换掉浏览器与 Service Worker 里的旧缓存
     const ASSET_VERSION = "3";
-    const assetUrl = (name) => `${ASSET_BASE}/${name}?v=${ASSET_VERSION}`;
+    const assetUrl = (name) =>
+      `${ASSET_BASE}/${name}${location.protocol === "file:" ? "" : `?v=${ASSET_VERSION}`}`;
 
     // 把书本封面色作为主题色：保持色相，把过暗的颜色提亮到可读范围
     function normalizeAccent(value) {
