@@ -4704,41 +4704,71 @@
       "starry",
     ];
     const prefetchedAssetUrls = new Set();
+    const prefetchQueue = [];
+    const PREFETCH_CONCURRENCY = 4;
+    let prefetchWorkers = 0;
     let prefetchTimer = 0;
 
-    // 在主站提前把角色素材灌入浏览器缓存，进入神经页后无需现场等待下载
-    function prefetchBookAssets(book, includeEmotions) {
+    function startPrefetchWorkers() {
+      while (prefetchWorkers < PREFETCH_CONCURRENCY && prefetchQueue.length) {
+        prefetchWorkers += 1;
+        (async () => {
+          while (prefetchQueue.length) {
+            const url = prefetchQueue.shift();
+            try {
+              await fetch(url, { cache: "force-cache", priority: "low" });
+            } catch (error) {
+              // 预取失败不影响正常加载
+            }
+          }
+          prefetchWorkers -= 1;
+        })();
+      }
+    }
+
+    function enqueueAssetPrefetch(urls) {
+      for (const url of urls) {
+        if (prefetchedAssetUrls.has(url)) continue;
+        prefetchedAssetUrls.add(url);
+        prefetchQueue.push(url);
+      }
+      startPrefetchWorkers();
+    }
+
+    function characterAssetUrls(book, includeEmotions) {
       const assetId = CHARACTER_ASSET_IDS[book.id];
-      if (!assetId) return;
-      const urls = [
+      if (!assetId) return { light: [], heavy: [] };
+      const light = [
         `neural/${book.id}.html`,
         `assets/${assetId}/idle.webm`,
       ];
       for (let i = 0; i < 16; i += 1) {
-        urls.push(`assets/${assetId}/gaze-${i}.webp`);
+        light.push(`assets/${assetId}/gaze-${i}.webp`);
       }
-      if (includeEmotions) {
-        for (const id of EMOTION_ASSET_IDS) {
-          urls.push(`assets/${assetId}/${id}.webm`);
-        }
-      }
-      const pending = urls.filter((url) => !prefetchedAssetUrls.has(url));
-      if (!pending.length) return;
-      for (const url of pending) prefetchedAssetUrls.add(url);
+      const heavy = includeEmotions
+        ? EMOTION_ASSET_IDS.map((id) => `assets/${assetId}/${id}.webm`)
+        : [];
+      return { light, heavy };
+    }
 
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < pending.length) {
-          const url = pending[cursor];
-          cursor += 1;
-          try {
-            await fetch(url, { cache: "force-cache", priority: "low" });
-          } catch (error) {
-            // 预取失败不影响正常加载
-          }
-        }
-      };
-      Promise.all([worker(), worker()]);
+    // 在主站提前把角色素材灌入浏览器缓存，进入神经页后无需现场等待下载
+    function prefetchBookAssets(book, includeEmotions) {
+      const { light, heavy } = characterAssetUrls(book, includeEmotions);
+      enqueueAssetPrefetch(light);
+      enqueueAssetPrefetch(heavy);
+    }
+
+    // 打开主站时就把 7 个角色的轻量资源并发下载，再排队下载情绪动作
+    function prefetchAllCharacterAssets() {
+      const light = [];
+      const heavy = [];
+      for (const book of BOOKS) {
+        const urls = characterAssetUrls(book, true);
+        light.push(...urls.light);
+        heavy.push(...urls.heavy);
+      }
+      enqueueAssetPrefetch(light);
+      enqueueAssetPrefetch(heavy);
     }
 
     function scheduleAssetPrefetch(book, includeEmotions) {
@@ -4749,8 +4779,8 @@
       );
     }
 
-    // 页面一开始就预取首卷完整素材，不等书架纹理生成完成
-    window.setTimeout(() => prefetchBookAssets(BOOKS[0], true), 800);
+    // 页面一开始就分批预取全部角色资源，不等书架纹理生成完成
+    window.setTimeout(prefetchAllCharacterAssets, 800);
 
     function neuralFrameSrc(book) {
       const page = NEURAL_PAGES[book.id];
