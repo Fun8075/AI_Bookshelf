@@ -1,0 +1,8 @@
+# Netlify 缓存策略
+# 角色素材与音频带哈希无关，按内容长期缓存；HTML 每次回源校验，避免更新后仍读到旧页面。
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate

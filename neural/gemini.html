@@ -849,6 +849,13 @@
     idleVideo.poster = `${ASSET_BASE}/pet-still.webp`;
     gazeImage.src = `${ASSET_BASE}/gaze-0.webp`;
 
+    // 网络空闲时悄悄预载注视帧，首次进入人形就能立即跟随
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(preloadGazeFrames, { timeout: 2500 });
+    } else {
+      window.setTimeout(preloadGazeFrames, 1200);
+    }
+
     // 点击随机播放的情绪动作，视频在首次触发时才加载
     const EMOTION_ACTIONS = [
       { id: "wave", label: "挥手", video: reactVideo, src: `${ASSET_BASE}/wave.webm` },
@@ -864,6 +871,20 @@
     // 16 个注视方向：0=正上，顺时针每 22.5° 一帧
     const GAZE_FRAME_COUNT = 16;
     let gazeIndex = 0;
+    let lastGazeSwitch = 0;
+    const gazeFrames = [];
+
+    // 预载全部注视帧，避免线上切换方向时逐张下载造成“迟钝”
+    function preloadGazeFrames() {
+      if (gazeFrames.length) return;
+      for (let i = 0; i < GAZE_FRAME_COUNT; i += 1) {
+        const frame = new Image();
+        frame.decoding = "async";
+        frame.src = `${ASSET_BASE}/gaze-${i}.webp`;
+        if (frame.decode) frame.decode().catch(() => {});
+        gazeFrames[i] = frame;
+      }
+    }
 
     for (const action of EMOTION_ACTIONS) {
       if (!action.video) {
@@ -954,8 +975,13 @@
           GAZE_FRAME_COUNT) %
         GAZE_FRAME_COUNT;
       if (index === gazeIndex) return;
+      // 限制切换频率，避免指针在扇区边界抖动时反复换帧
+      const now = performance.now();
+      if (now - lastGazeSwitch < 70) return;
+      lastGazeSwitch = now;
       gazeIndex = index;
-      gazeImage.src = `${ASSET_BASE}/gaze-${index}.webp`;
+      const frame = gazeFrames[index];
+      gazeImage.src = frame ? frame.src : `${ASSET_BASE}/gaze-${index}.webp`;
     }
 
     /* ---------------- 形态切换的粒子过渡 ---------------- */
@@ -1296,6 +1322,21 @@
     let leanY = 0;
     let leanRot = 0;
 
+    // 缓存人物中心与半径，避免每帧读取布局
+    let followCenterX = window.innerWidth * 0.5;
+    let followCenterY = window.innerHeight * 0.5;
+    let followNearRadius = 180;
+    let followExitRadius = 250;
+
+    function updateFollowMetrics() {
+      followCenterX = window.innerWidth * 0.5;
+      followCenterY = window.innerHeight * 0.5;
+      const figureHeight = characterFigure.getBoundingClientRect().height;
+      followNearRadius = Math.max(180, figureHeight / 2 + FOLLOW_MARGIN);
+      followExitRadius = followNearRadius + 70;
+    }
+    window.addEventListener("resize", updateFollowMetrics);
+
     window.addEventListener("pointermove", (event) => {
       pointerX = event.clientX;
       pointerY = event.clientY;
@@ -1314,15 +1355,13 @@
       let targetY = 0;
       let targetRot = 0;
 
-      const nearRadius =
-        Math.max(180, characterFigure.offsetHeight / 2 + FOLLOW_MARGIN);
-      const exitRadius = nearRadius + 70;
+      const nearRadius = followNearRadius;
+      const exitRadius = followExitRadius;
       const canFollow = !reacting;
 
       if (pointerX !== null) {
-        const rect = characterStage.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
+        const centerX = followCenterX;
+        const centerY = followCenterY;
         const distance = Math.hypot(pointerX - centerX, pointerY - centerY);
         if (nearCharacter) {
           if (distance > exitRadius) nearCharacter = false;
@@ -1398,8 +1437,11 @@
     // 神经网络 → 人物：粒子从网络节点汇聚成人物轮廓
     function enterHumanMode() {
       resetCharacterLayers();
+      preloadGazeFrames();
+      updateFollowMetrics();
 
       humanMode = true;
+      window.__neuralHumanMode = true;
       modeTransition = true;
       syncModeButtons("human");
       characterStage.setAttribute("aria-hidden", "false");
@@ -1456,6 +1498,7 @@
       const networkPoints = networkScreenPoints(MORPH_COUNT);
 
       humanMode = false;
+      window.__neuralHumanMode = false;
       modeTransition = true;
       syncModeButtons("neural");
       window.clearTimeout(stageShowTimer);
@@ -2605,6 +2648,8 @@
     });
 
     renderer.setAnimationLoop(() => {
+      // 人形形态下画布不可见，暂停 3D 渲染，把 GPU 留给人物跟随
+      if (window.__neuralHumanMode) return;
       const dt = Math.min(clock.getDelta(), 0.05);
 
       if (!dragging) targetRotY += dt * autoRotateSpeed;
