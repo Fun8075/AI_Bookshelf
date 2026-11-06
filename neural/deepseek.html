@@ -272,6 +272,11 @@
       color: var(--accent-soft);
     }
 
+    .mode-switch__btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
     .mode-switch__btn:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
@@ -856,13 +861,7 @@
       window.setTimeout(preloadGazeFrames, 1200);
     }
 
-    // 页面空闲后预载待机与情绪视频，首次点击动作不再等网络
-    window.setTimeout(() => {
-      if (!idleVideo.getAttribute("src")) {
-        idleVideo.src = `${ASSET_BASE}/idle.webm`;
-      }
-      window.setTimeout(preloadEmotionVideos, 800);
-    }, 800);
+    // 角色视频在解析完动作列表后立即预取（见 preloadCharacterVideos）
 
     // 点击随机播放的情绪动作，视频在首次触发时才加载
     const EMOTION_ACTIONS = [
@@ -921,24 +920,65 @@
       action.video.src = action.src;
     }
 
-    let emotionsPreloaded = false;
-    // 依次预载 8 段情绪视频，点击动作时不再等待网络
-    function preloadEmotionVideos() {
-      if (emotionsPreloaded) return;
-      emotionsPreloaded = true;
-      let index = 0;
-      const next = () => {
-        if (index >= EMOTION_ACTIONS.length) return;
-        const action = EMOTION_ACTIONS[index];
-        index += 1;
-        ensureEmotionSource(action);
-        action.video.preload = "auto";
-        if (action.video.readyState === 0) action.video.load();
-        // 错开请求，避免 8 个大文件同时抢占带宽
-        window.setTimeout(next, 300);
-      };
-      next();
+    let characterAssetsStarted = false;
+    const humanModeButton = document.querySelector('[data-mode="human"]');
+    const humanModeLabel = humanModeButton ? humanModeButton.textContent : "";
+
+    function updateCharacterAssetProgress(done, total) {
+      if (!humanModeButton) return;
+      if (done >= total) {
+        humanModeButton.disabled = false;
+        humanModeButton.textContent = humanModeLabel;
+        humanModeButton.removeAttribute("title");
+      } else {
+        humanModeButton.disabled = true;
+        humanModeButton.textContent = `数字人 ${Math.round((done / total) * 100)}%`;
+        humanModeButton.title = "正在预载角色动作…";
+      }
     }
+
+    // 页面加载时就把待机与全部情绪视频取到本地 Blob，点击时直接解码播放
+    async function preloadCharacterVideos() {
+      if (characterAssetsStarted) return;
+      characterAssetsStarted = true;
+      const tasks = [
+        { url: `${ASSET_BASE}/idle.webm`, video: idleVideo },
+        ...EMOTION_ACTIONS.map((action) => ({
+          url: action.src,
+          video: action.video
+        }))
+      ];
+      let cursor = 0;
+      let done = 0;
+      const total = tasks.length;
+      updateCharacterAssetProgress(done, total);
+
+      const worker = async () => {
+        while (cursor < tasks.length) {
+          const task = tasks[cursor];
+          cursor += 1;
+          try {
+            const response = await fetch(task.url, { cache: "force-cache" });
+            if (!response.ok) throw new Error(String(response.status));
+            const blob = await response.blob();
+            task.video.preload = "auto";
+            task.video.src = URL.createObjectURL(blob);
+            task.video.load();
+          } catch (error) {
+            // 预取失败时回退到原始地址，仍可在点击时按需加载
+            if (!task.video.getAttribute("src")) task.video.src = task.url;
+          }
+          done += 1;
+          updateCharacterAssetProgress(done, total);
+        }
+      };
+
+      await Promise.all([worker(), worker(), worker()]);
+      updateCharacterAssetProgress(total, total);
+    }
+
+    // 页面一开始就预取，而不是等用户切到人形
+    window.setTimeout(preloadCharacterVideos, 0);
 
     function setLean(x, y, rot) {
       characterFigure.style.setProperty("--lean-x", `${x.toFixed(1)}px`);
@@ -1467,7 +1507,6 @@
     function enterHumanMode() {
       resetCharacterLayers();
       preloadGazeFrames();
-      preloadEmotionVideos();
       updateFollowMetrics();
 
       humanMode = true;
