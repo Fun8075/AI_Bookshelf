@@ -712,6 +712,9 @@
     };
     const DISPLAY_NAME = "Grok";
     const ASSET_BASE = `../assets/${CHARACTER_ID}`;
+    // 资源版本号：视频/注视帧更新后递增，使 URL 变化，强制换掉浏览器与 Service Worker 里的旧缓存
+    const ASSET_VERSION = "3";
+    const assetUrl = (name) => `${ASSET_BASE}/${name}?v=${ASSET_VERSION}`;
 
     // 把书本封面色作为主题色：保持色相，把过暗的颜色提亮到可读范围
     function normalizeAccent(value) {
@@ -851,8 +854,8 @@
     let modeTransition = false;
 
     // 页面打开只预载首张注视帧与海报；待机视频（约 3 MB）留到首次进入数字人时再加载
-    idleVideo.poster = `${ASSET_BASE}/pet-still.webp`;
-    gazeImage.src = `${ASSET_BASE}/gaze-0.webp`;
+    idleVideo.poster = `${assetUrl("pet-still.webp")}`;
+    gazeImage.src = `${assetUrl("gaze-0.webp")}`;
 
     // 网络空闲时悄悄预载注视帧，首次进入人形就能立即跟随
     if ("requestIdleCallback" in window) {
@@ -865,14 +868,14 @@
 
     // 点击随机播放的情绪动作，视频在首次触发时才加载
     const EMOTION_ACTIONS = [
-      { id: "wave", label: "挥手", video: reactVideo, src: `${ASSET_BASE}/wave.webm` },
-      { id: "cheerful", label: "开心", src: `${ASSET_BASE}/cheerful.webm` },
-      { id: "shy", label: "害羞", src: `${ASSET_BASE}/shy.webm` },
-      { id: "confused", label: "困惑", src: `${ASSET_BASE}/confused.webm` },
-      { id: "angry", label: "生气", src: `${ASSET_BASE}/angry.webm` },
-      { id: "frightened", label: "受惊", src: `${ASSET_BASE}/frightened.webm` },
-      { id: "exasperated", label: "无奈", src: `${ASSET_BASE}/exasperated.webm` },
-      { id: "starry", label: "星星眼", src: `${ASSET_BASE}/starry.webm` },
+      { id: "wave", label: "挥手", video: reactVideo, src: `${assetUrl("wave.webm")}` },
+      { id: "cheerful", label: "开心", src: `${assetUrl("cheerful.webm")}` },
+      { id: "shy", label: "害羞", src: `${assetUrl("shy.webm")}` },
+      { id: "confused", label: "困惑", src: `${assetUrl("confused.webm")}` },
+      { id: "angry", label: "生气", src: `${assetUrl("angry.webm")}` },
+      { id: "frightened", label: "受惊", src: `${assetUrl("frightened.webm")}` },
+      { id: "exasperated", label: "无奈", src: `${assetUrl("exasperated.webm")}` },
+      { id: "starry", label: "星星眼", src: `${assetUrl("starry.webm")}` },
     ];
 
     // 16 个注视方向：0=正上，顺时针每 22.5° 一帧
@@ -887,7 +890,7 @@
       for (let i = 0; i < GAZE_FRAME_COUNT; i += 1) {
         const frame = new Image();
         frame.decoding = "async";
-        frame.src = `${ASSET_BASE}/gaze-${i}.webp`;
+        frame.src = `${assetUrl(`gaze-${i}.webp`)}`;
         if (frame.decode) frame.decode().catch(() => {});
         gazeFrames[i] = frame;
       }
@@ -1013,13 +1016,13 @@
       }
       try {
         await installVideoBlob({
-          url: `${ASSET_BASE}/idle.webm`,
+          url: `${assetUrl("idle.webm")}`,
           video: idleVideo,
           onProgress: (ratio) => setHumanButtonText(`数字人 ${Math.round(ratio * 100)}%`)
         });
       } catch (error) {
         if (!idleVideo.getAttribute("src")) {
-          idleVideo.src = `${ASSET_BASE}/idle.webm`;
+          idleVideo.src = `${assetUrl("idle.webm")}`;
         }
       }
       unlockHumanMode();
@@ -1111,7 +1114,7 @@
       lastGazeSwitch = now;
       gazeIndex = index;
       const frame = gazeFrames[index];
-      gazeImage.src = frame ? frame.src : `${ASSET_BASE}/gaze-${index}.webp`;
+      gazeImage.src = frame ? frame.src : `${assetUrl(`gaze-${index}.webp`)}`;
     }
 
     /* ---------------- 形态切换的粒子过渡 ---------------- */
@@ -1595,7 +1598,7 @@
 
       // 待机视频按需加载：页面打开时不再预取约 3 MB 视频
       const coldStart = !idleVideo.getAttribute("src");
-      if (coldStart) idleVideo.src = `${ASSET_BASE}/idle.webm`;
+      if (coldStart) idleVideo.src = `${assetUrl("idle.webm")}`;
       idleVideo.currentTime = 0;
       idleVideo.play().catch(() => {});
 

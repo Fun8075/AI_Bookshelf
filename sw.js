@@ -1,5 +1,5 @@
 /* 智汇卷册 · 角色素材离线缓存 */
-const ASSET_CACHE = "ai-bookshelf-assets-v2";
+const ASSET_CACHE = "ai-bookshelf-assets-v3";
 const PAGE_CACHE = "ai-bookshelf-pages-v1";
 
 self.addEventListener("install", () => {
@@ -32,7 +32,8 @@ self.addEventListener("fetch", (event) => {
       const cache = await caches.open(ASSET_CACHE);
       const cached = await cache.match(request);
       if (cached) return cached;
-      const response = await fetch(request);
+      // 缓存未命中时绕过浏览器 HTTP 缓存，避免继续命中旧的 immutable 副本
+      const response = await fetch(request, { cache: "reload" });
       if (response.ok) cache.put(request, response.clone());
       return response;
     })());

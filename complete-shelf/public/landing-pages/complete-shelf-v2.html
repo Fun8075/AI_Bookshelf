@@ -4703,6 +4703,8 @@
       "exasperated",
       "starry",
     ];
+    // 视频/注视帧版本号：与 neural/*.html 里的 ASSET_VERSION 保持一致
+    const ASSET_VERSION = "3";
     const prefetchedAssetUrls = new Set();
     const prefetchQueue = [];
     const PREFETCH_CONCURRENCY = 4;
@@ -4740,13 +4742,13 @@
       if (!assetId) return { light: [], heavy: [] };
       const light = [
         `neural/${book.id}.html`,
-        `assets/${assetId}/idle.webm`,
+        `assets/${assetId}/idle.webm?v=${ASSET_VERSION}`,
       ];
       for (let i = 0; i < 16; i += 1) {
-        light.push(`assets/${assetId}/gaze-${i}.webp`);
+        light.push(`assets/${assetId}/gaze-${i}.webp?v=${ASSET_VERSION}`);
       }
       const heavy = includeEmotions
-        ? EMOTION_ASSET_IDS.map((id) => `assets/${assetId}/${id}.webm`)
+        ? EMOTION_ASSET_IDS.map((id) => `assets/${assetId}/${id}.webm?v=${ASSET_VERSION}`)
         : [];
       return { light, heavy };
     }
