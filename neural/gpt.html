@@ -924,57 +924,90 @@
     const humanModeButton = document.querySelector('[data-mode="human"]');
     const humanModeLabel = humanModeButton ? humanModeButton.textContent : "";
 
-    function updateCharacterAssetProgress(done, total) {
-      if (!humanModeButton) return;
-      if (done >= total) {
-        humanModeButton.disabled = false;
-        humanModeButton.textContent = humanModeLabel;
-        humanModeButton.removeAttribute("title");
-      } else {
-        humanModeButton.disabled = true;
-        humanModeButton.textContent = `数字人 ${Math.round((done / total) * 100)}%`;
-        humanModeButton.title = "正在预载角色动作…";
-      }
+    function setHumanButtonText(text) {
+      if (humanModeButton) humanModeButton.textContent = text;
     }
 
-    // 页面加载时就把待机与全部情绪视频取到本地 Blob，点击时直接解码播放
+    function unlockHumanMode() {
+      if (!humanModeButton) return;
+      humanModeButton.disabled = false;
+      humanModeButton.textContent = humanModeLabel;
+      humanModeButton.removeAttribute("title");
+    }
+
+    // 流式读取并报告字节进度，避免进度长时间停在 0%
+    async function fetchVideoBlob(url, onProgress) {
+      const response = await fetch(url, { cache: "force-cache", priority: "low" });
+      if (!response.ok) throw new Error(String(response.status));
+      const total = Number(response.headers.get("content-length")) || 0;
+      if (!response.body || !total) {
+        const blob = await response.blob();
+        if (onProgress) onProgress(1);
+        return blob;
+      }
+      const reader = response.body.getReader();
+      const chunks = [];
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        if (onProgress) onProgress(Math.min(1, received / total));
+      }
+      if (onProgress) onProgress(1);
+      return new Blob(chunks, {
+        type: response.headers.get("content-type") || "video/webm"
+      });
+    }
+
+    async function installVideoBlob(task) {
+      const blob = await fetchVideoBlob(task.url, task.onProgress);
+      task.video.preload = "auto";
+      task.video.src = URL.createObjectURL(blob);
+      task.video.load();
+    }
+
+    // 先加载待机视频，完成后立刻放行「数字人」入口；情绪动作在后台继续预载
     async function preloadCharacterVideos() {
       if (characterAssetsStarted) return;
       characterAssetsStarted = true;
-      const tasks = [
-        { url: `${ASSET_BASE}/idle.webm`, video: idleVideo },
-        ...EMOTION_ACTIONS.map((action) => ({
-          url: action.src,
-          video: action.video
-        }))
-      ];
-      let cursor = 0;
-      let done = 0;
-      const total = tasks.length;
-      updateCharacterAssetProgress(done, total);
 
+      if (humanModeButton) {
+        humanModeButton.disabled = true;
+        humanModeButton.title = "正在预载角色…";
+        setHumanButtonText("数字人 加载中…");
+      }
+      try {
+        await installVideoBlob({
+          url: `${ASSET_BASE}/idle.webm`,
+          video: idleVideo,
+          onProgress: (ratio) => setHumanButtonText(`数字人 ${Math.round(ratio * 100)}%`)
+        });
+      } catch (error) {
+        if (!idleVideo.getAttribute("src")) {
+          idleVideo.src = `${ASSET_BASE}/idle.webm`;
+        }
+      }
+      unlockHumanMode();
+
+      const tasks = EMOTION_ACTIONS.map((action) => ({
+        url: action.src,
+        video: action.video
+      }));
+      let cursor = 0;
       const worker = async () => {
         while (cursor < tasks.length) {
           const task = tasks[cursor];
           cursor += 1;
           try {
-            const response = await fetch(task.url, { cache: "force-cache" });
-            if (!response.ok) throw new Error(String(response.status));
-            const blob = await response.blob();
-            task.video.preload = "auto";
-            task.video.src = URL.createObjectURL(blob);
-            task.video.load();
+            await installVideoBlob(task);
           } catch (error) {
-            // 预取失败时回退到原始地址，仍可在点击时按需加载
             if (!task.video.getAttribute("src")) task.video.src = task.url;
           }
-          done += 1;
-          updateCharacterAssetProgress(done, total);
         }
       };
-
       await Promise.all([worker(), worker(), worker()]);
-      updateCharacterAssetProgress(total, total);
     }
 
     // 页面一开始就预取，而不是等用户切到人形
