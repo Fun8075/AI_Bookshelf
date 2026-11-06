@@ -4620,6 +4620,7 @@
       if (nextIndex === selectedIndex && !announce) return;
       selectedIndex = nextIndex;
       const book = BOOKS[selectedIndex];
+      scheduleAssetPrefetch(book, false);
       selectionTitle.textContent = book.title;
       selectionNote.textContent = book.note;
       counter.textContent = `${pad(selectedIndex + 1)} / ${pad(BOOKS.length)}`;
@@ -4681,6 +4682,75 @@
       doubao: "neural/doubao.html",
       qwen: "neural/qwen.html",
     };
+
+    // 角色素材目录 ID（Doubao 使用 seed 形象）
+    const CHARACTER_ASSET_IDS = {
+      gpt: "gpt",
+      claude: "claude",
+      gemini: "gemini",
+      grok: "grok",
+      deepseek: "deepseek",
+      doubao: "seed",
+      qwen: "qwen",
+    };
+    const EMOTION_ASSET_IDS = [
+      "wave",
+      "cheerful",
+      "shy",
+      "confused",
+      "angry",
+      "frightened",
+      "exasperated",
+      "starry",
+    ];
+    const prefetchedAssetUrls = new Set();
+    let prefetchTimer = 0;
+
+    // 在主站提前把角色素材灌入浏览器缓存，进入神经页后无需现场等待下载
+    function prefetchBookAssets(book, includeEmotions) {
+      const assetId = CHARACTER_ASSET_IDS[book.id];
+      if (!assetId) return;
+      const urls = [
+        `neural/${book.id}.html`,
+        `assets/${assetId}/idle.webm`,
+      ];
+      for (let i = 0; i < 16; i += 1) {
+        urls.push(`assets/${assetId}/gaze-${i}.webp`);
+      }
+      if (includeEmotions) {
+        for (const id of EMOTION_ASSET_IDS) {
+          urls.push(`assets/${assetId}/${id}.webm`);
+        }
+      }
+      const pending = urls.filter((url) => !prefetchedAssetUrls.has(url));
+      if (!pending.length) return;
+      for (const url of pending) prefetchedAssetUrls.add(url);
+
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < pending.length) {
+          const url = pending[cursor];
+          cursor += 1;
+          try {
+            await fetch(url, { cache: "force-cache", priority: "low" });
+          } catch (error) {
+            // 预取失败不影响正常加载
+          }
+        }
+      };
+      Promise.all([worker(), worker()]);
+    }
+
+    function scheduleAssetPrefetch(book, includeEmotions) {
+      window.clearTimeout(prefetchTimer);
+      prefetchTimer = window.setTimeout(
+        () => prefetchBookAssets(book, includeEmotions),
+        includeEmotions ? 0 : 500
+      );
+    }
+
+    // 页面一开始就预取首卷完整素材，不等书架纹理生成完成
+    window.setTimeout(() => prefetchBookAssets(BOOKS[0], true), 800);
 
     function neuralFrameSrc(book) {
       const page = NEURAL_PAGES[book.id];
@@ -5665,6 +5735,7 @@
           ? origin
           : inspectButton;
       activeBook = bookRigs[selectedIndex];
+      scheduleAssetPrefetch(activeBook.data, true);
       activeBook.contactShadow.visible = false;
       populateDetail(activeBook.data);
       updatePageControls(false);
